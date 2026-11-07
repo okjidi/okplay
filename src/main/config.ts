@@ -40,7 +40,7 @@ export function resolveConfig(): AppConfig {
   const fromEnv = process.env.OKPLAY_ORIGIN;
   if (fromEnv && fromEnv.trim()) {
     const origin = normalizeOrigin(fromEnv);
-    return { origin, pageUrl: `${origin}/`, healthUrl: `${origin}/` };
+    return { origin, pageUrl: `${origin}/`, healthUrl: `${origin}/api/health` };
   }
 
   // 2) 只有显式 `--dev` 指向本机 Vite；打包版与源码安装都指生产。
@@ -48,7 +48,7 @@ export function resolveConfig(): AppConfig {
   // 生产域名是**编译进来**的常量（见 shared/contracts.ts）—— 安装版的 exe
   // 从开始菜单启动时读不到任何环境变量，只能靠它。
   const origin = isDevMode() ? DEV_ORIGIN : PRODUCTION_ORIGIN;
-  return { origin, pageUrl: `${origin}/`, healthUrl: `${origin}/` };
+  return { origin, pageUrl: `${origin}/`, healthUrl: `${origin}/api/health` };
 }
 
 /**

@@ -19,6 +19,8 @@ npm-debug.log*
 /CLAUDE.md
 /.learnings/
 /docs/
+/.planning/
+/planning/
 
 # ── 安全审计过程文件（内部）─────────────────────
 # 这些报告里有生产 IP、主机指纹、生产域名，以及**完整的漏洞清单与修复经过** ——

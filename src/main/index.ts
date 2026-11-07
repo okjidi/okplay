@@ -88,10 +88,17 @@ function focusExistingWindow(): void {
   mainWindow.focus();
 }
 
-/** 探测云端是否可达。拿到响应就算通；抛异常才算不通。 */
+/**
+ * 探测云端是否可达。拿到响应就算通；抛异常才算不通。
+ *
+ * ⚠️ 超时给到 **8 秒**（2026-11-05，原 3 秒）：实测 Electron 进程**冷启动**的
+ * 第一个 HTTPS 请求要走 DNS + TCP + TLS，本机稳定在 **2.3–2.8 秒**，3 秒在慢
+ * DNS / 弱网下会误判成“连不上”，于是每次开客户端都先弹离线页，点重试（走
+ * `loadURL`，此时连接已热）才正常。探测打的是 `/api/health`，不是首页。
+ */
 async function probeReachable(url: string): Promise<boolean> {
   try {
-    await net.fetch(url, { method: 'GET', signal: AbortSignal.timeout(3000) });
+    await net.fetch(url, { method: 'GET', signal: AbortSignal.timeout(8000) });
     return true;
   } catch (error) {
     log.warn('连通性探测失败', { url, message: (error as Error).message });

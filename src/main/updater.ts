@@ -14,7 +14,7 @@ import { log } from './log';
  */
 
 /** 分发位置：GitHub Releases（PRD §20）。 */
-const RELEASE_REPO = process.env.OKPLAY_RELEASE_REPO?.trim() || 'okyolo/okplay';
+const RELEASE_REPO = process.env.OKPLAY_RELEASE_REPO?.trim() || 'okjidi/okplay';
 const RELEASES_API = `https://api.github.com/repos/${RELEASE_REPO}/releases/latest`;
 const RELEASES_PAGE = `https://github.com/${RELEASE_REPO}/releases/latest`;
 

@@ -27,7 +27,7 @@ OK基地课程**专用桌面播放器**，基于 Electron。
 
 ## 安装
 
-**Windows** —— 三种形式，都在 [Releases](https://github.com/okyolo/okplay/releases) 下载：
+**Windows** —— 三种形式，都在 [Releases](https://github.com/okjidi/okplay/releases) 下载：
 
 | 形式 | 文件 | 桌面图标 | 说明 |
 |---|---|---|---|
@@ -53,7 +53,7 @@ OK基地课程**专用桌面播放器**，基于 Electron。
 **Windows**
 
 ```bash
-git clone https://github.com/okyolo/okplay.git
+git clone https://github.com/okjidi/okplay.git
 cd okplay
 npm install
 npm start            # 先跑一次，确认窗口能打开（这一步同时完成构建）
@@ -63,7 +63,7 @@ npm run shortcut     # 可选：在桌面建 okplay.lnk，以后双击就能开
 **macOS**
 
 ```bash
-git clone https://github.com/okyolo/okplay.git
+git clone https://github.com/okjidi/okplay.git
 cd okplay
 npm install
 npm start            # 先跑一次，确认窗口能打开（这一步同时完成构建）

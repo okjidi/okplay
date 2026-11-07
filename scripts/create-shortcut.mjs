@@ -189,21 +189,27 @@ function createMacShortcut() {
     process.exit(1);
   }
 
-  // 图标：png → iconset → icns，贴到 applet 的 Resources/applet.icns
-  if (existsSync(iconSrc)) {
-    try {
+  // 图标：贴到 applet 的 Resources/applet.icns。
+  //
+  // **优先用仓库里预生成好的 `build/icon.icns`**（2026-11-07）。原先每次都跑
+  // sips + iconutil，两个问题：
+  //   1. 新版 macOS 上 `sips` 对某些 PNG 会产出 iconutil 不认的条目，
+  //      整组被拒 → 静默退回 AppleScript 默认图标（用户看到的就是「图标不对」）；
+  //   2. 多了一层系统工具依赖，出问题只留一行 warn。
+  // 预生成的 icns 是固定字节，装到哪台机器都一样。iconset 那条仍保留作兜底。
+  const icnsBundle = join(root, 'build', 'icon.icns');
+  try {
+    if (existsSync(icnsBundle)) {
+      execFileSync('cp', [icnsBundle, join(out, 'Contents', 'Resources', 'applet.icns')]);
+    } else if (existsSync(iconSrc)) {
       /*
        * ⚠️ 目录名**必须以 `.iconset` 结尾**，否则 iconutil 直接报
-       * "Invalid Iconset" —— 之前叫 `.shortcut-iconset`，就是它导致图标永远是
-       * AppleScript 的默认图标。放临时目录，别在仓库里留垃圾。
+       * "Invalid Iconset"。放临时目录，别在仓库里留垃圾。
+       * iconutil 只认标准文件名（16/32/128/256/512 各带 @2x）。
        */
       const iconset = join(tmpdir(), `okplay-shortcut-${process.pid}.iconset`);
       execFileSync('rm', ['-rf', iconset]);
       execFileSync('mkdir', ['-p', iconset]);
-      /*
-       * iconutil 只认标准文件名（16/32/128/256/512 各带 @2x）。
-       * 别加 64 —— `icon_64x64.png` 不在标准集合里，iconutil 会整组拒绝。
-       */
       for (const size of [16, 32, 128, 256, 512]) {
         execFileSync('sips', ['-z', String(size), String(size), iconSrc, '--out', join(iconset, `icon_${size}x${size}.png`)]);
         execFileSync('sips', ['-z', String(size * 2), String(size * 2), iconSrc, '--out', join(iconset, `icon_${size}x${size}@2x.png`)]);
@@ -212,14 +218,25 @@ function createMacShortcut() {
       execFileSync('iconutil', ['-c', 'icns', iconset, '-o', icns]);
       execFileSync('cp', [icns, join(out, 'Contents', 'Resources', 'applet.icns')]);
       execFileSync('rm', ['-rf', iconset, icns]);
-      // 让 Finder 重新读图标（替换后 mtime 不变的话它会继续用缓存）
-      execFileSync('touch', [out]);
-    } catch (error) {
-      console.warn(`图标生成失败，.app 仍可用（会用系统默认图标）：${error.message}`);
     }
+
+    // 替换 icns 后 Finder / LaunchServices 仍按旧的记 —— 三件事都要做：
+    // 改 mtime、清隔离属性、让 LaunchServices 重新登记。
+    execFileSync('touch', [out]);
+    try { execFileSync('xattr', ['-cr', out]); } catch { /* 没属性就算了 */ }
+    try {
+      execFileSync(
+        '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister',
+        ['-f', out],
+        { stdio: 'ignore' },
+      );
+    } catch { /* lsregister 失败不影响双击启动 */ }
+  } catch (error) {
+    console.warn(`图标生成失败，.app 仍可用（会用系统默认图标）：${error.message}`);
   }
 
   console.log(`已在桌面创建：${out}`);
   console.log('双击即可启动（不弹终端）。');
-  console.log('如果图标还是旧的：执行 killall Finder 刷新图标缓存。');
+  console.log('如果图标还是 AppleScript 默认图标：先把桌面上的 okplay.app 拖到废纸篓，');
+  console.log('再跑一次 npm run shortcut；仍然不对就执行 killall Finder 刷新图标缓存。');
 }

@@ -31,7 +31,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -174,39 +174,64 @@ function createMacShortcut() {
   try { execFileSync('rm', ['-rf', out]); } catch { /* 不存在就算了 */ }
 
   /**
-   * AppleScript 只做一件事：把启动脚本丢到后台。
-   * `nohup ... &` 让 AppleScript 立刻返回，applet 自行退出，不会吊着。
-   * 双引号与反斜杠按 AppleScript 字符串转义。
+   * 直接手搓一个真正的 .app bundle，**不用 osacompile**（2026-11-08）。
+   *
+   * 原来用 osacompile 生成 AppleScript applet，图标靠替换
+   * `Contents/Resources/applet.icns`。实测在较新的 macOS 上这条路不可靠：
+   * applet 有自己的一套图标缓存，替换后桌面上仍是「脚本」默认图标，
+   * `touch` / `killall Finder` 都不一定救得回来。
+   *
+   * 现在的做法是普通应用包：Info.plist 里直接写 `CFBundleIconFile`，图标就是我们
+   * 自己的 icns，Finder 没有任何理由再去读 AppleScript 的默认图。
+   *
+   *   okplay.app/
+   *     Contents/Info.plist          CFBundleExecutable = okplay
+   *     Contents/MacOS/okplay        一行 shell：后台拉起 launch-mac.sh
+   *     Contents/Resources/icon.icns 仓库内预生成
    */
-  const shellCmd = `nohup "${launcher}" > /tmp/okplay-start.log 2>&1 &`;
-  const escaped = shellCmd.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-  const applescript = `do shell script "${escaped}"`;
-
+  const contents = join(out, 'Contents');
+  const macosDir = join(contents, 'MacOS');
+  const resourcesDir = join(contents, 'Resources');
   try {
-    execFileSync('osacompile', ['-o', out, '-e', applescript], { stdio: 'inherit' });
-  } catch {
-    console.error('osacompile 失败：没能生成 .app。');
+    execFileSync('mkdir', ['-p', macosDir, resourcesDir]);
+  } catch (error) {
+    console.error(`建不出 ${out}：${error.message}`);
     process.exit(1);
   }
 
-  // 图标：贴到 applet 的 Resources/applet.icns。
-  //
-  // **优先用仓库里预生成好的 `build/icon.icns`**（2026-11-07）。原先每次都跑
-  // sips + iconutil，两个问题：
-  //   1. 新版 macOS 上 `sips` 对某些 PNG 会产出 iconutil 不认的条目，
-  //      整组被拒 → 静默退回 AppleScript 默认图标（用户看到的就是「图标不对」）；
-  //   2. 多了一层系统工具依赖，出问题只留一行 warn。
-  // 预生成的 icns 是固定字节，装到哪台机器都一样。iconset 那条仍保留作兜底。
+  writeFileSync(join(contents, 'Info.plist'), `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key><string>okplay</string>
+  <key>CFBundleDisplayName</key><string>OKPlay</string>
+  <key>CFBundleIdentifier</key><string>cn.okbase.okplay.desktop</string>
+  <key>CFBundleExecutable</key><string>okplay</string>
+  <key>CFBundleIconFile</key><string>icon.icns</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>1.0</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>LSMinimumSystemVersion</key><string>10.15</string>
+  <key>LSUIElement</key><true/>
+</dict>
+</plist>
+`);
+
+  // 启动器：后台拉起真正的 Electron，自己立刻退出（否则程序坞里会留一个不动的图标）。
+  const runnerPath = join(macosDir, 'okplay');
+  writeFileSync(runnerPath, `#!/bin/sh
+nohup "${launcher}" > /tmp/okplay-start.log 2>&1 &
+exit 0
+`);
+  execFileSync('chmod', ['755', runnerPath]);
+
+  // 图标：优先用仓库里预生成好的 icns。没有才退回 sips + iconutil。
   const icnsBundle = join(root, 'build', 'icon.icns');
+  const iconDest = join(resourcesDir, 'icon.icns');
   try {
     if (existsSync(icnsBundle)) {
-      execFileSync('cp', [icnsBundle, join(out, 'Contents', 'Resources', 'applet.icns')]);
+      execFileSync('cp', [icnsBundle, iconDest]);
     } else if (existsSync(iconSrc)) {
-      /*
-       * ⚠️ 目录名**必须以 `.iconset` 结尾**，否则 iconutil 直接报
-       * "Invalid Iconset"。放临时目录，别在仓库里留垃圾。
-       * iconutil 只认标准文件名（16/32/128/256/512 各带 @2x）。
-       */
       const iconset = join(tmpdir(), `okplay-shortcut-${process.pid}.iconset`);
       execFileSync('rm', ['-rf', iconset]);
       execFileSync('mkdir', ['-p', iconset]);
@@ -214,26 +239,25 @@ function createMacShortcut() {
         execFileSync('sips', ['-z', String(size), String(size), iconSrc, '--out', join(iconset, `icon_${size}x${size}.png`)]);
         execFileSync('sips', ['-z', String(size * 2), String(size * 2), iconSrc, '--out', join(iconset, `icon_${size}x${size}@2x.png`)]);
       }
-      const icns = join(tmpdir(), `okplay-shortcut-${process.pid}.icns`);
-      execFileSync('iconutil', ['-c', 'icns', iconset, '-o', icns]);
-      execFileSync('cp', [icns, join(out, 'Contents', 'Resources', 'applet.icns')]);
-      execFileSync('rm', ['-rf', iconset, icns]);
+      execFileSync('iconutil', ['-c', 'icns', iconset, '-o', iconDest]);
+      execFileSync('rm', ['-rf', iconset]);
+    } else {
+      console.warn('没有 build/icon.icns 也没有 src/assets/icon.png，将使用系统默认图标');
     }
-
-    // 替换 icns 后 Finder / LaunchServices 仍按旧的记 —— 三件事都要做：
-    // 改 mtime、清隔离属性、让 LaunchServices 重新登记。
-    execFileSync('touch', [out]);
-    try { execFileSync('xattr', ['-cr', out]); } catch { /* 没属性就算了 */ }
-    try {
-      execFileSync(
-        '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister',
-        ['-f', out],
-        { stdio: 'ignore' },
-      );
-    } catch { /* lsregister 失败不影响双击启动 */ }
   } catch (error) {
     console.warn(`图标生成失败，.app 仍可用（会用系统默认图标）：${error.message}`);
   }
+
+  // 换图标后 Finder / LaunchServices 仍可能按旧的记 —— 改 mtime、清隔离属性、重新登记。
+  execFileSync('touch', [out]);
+  try { execFileSync('xattr', ['-cr', out]); } catch { /* 没属性就算了 */ }
+  try {
+    execFileSync(
+      '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister',
+      ['-f', out],
+      { stdio: 'ignore' },
+    );
+  } catch { /* lsregister 失败不影响双击启动 */ }
 
   console.log(`已在桌面创建：${out}`);
   console.log('双击即可启动（不弹终端）。');

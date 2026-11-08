@@ -74,8 +74,9 @@ npm run shortcut     # 可选：在桌面生成 okplay.app
 > 「双击没反应」—— 但如果构建失败，它会直接报错退出。
 >
 > macOS 上没有「快捷方式」，`npm run shortcut` 会生成一个 `.app`：
-> 图标取自 `src/assets/icon.png`，双击直接启动，日志在 `/tmp/okplay-start.log`
-> （启动失败先看这个文件）。
+> 图标取自仓库内预生成的 `build/icon.icns`，双击直接启动，日志在 `/tmp/okplay-start.log`
+> （启动失败先看这个文件）。若图标仍显示成 AppleScript 的默认脚本图标，
+> 先删掉桌面的 `okplay.app` 再跑一次 `npm run shortcut`，仍不对就 `killall Finder`。
 > macOS 上如果首次运行提示「无法打开 Electron」，执行一次：
 > `xattr -dr com.apple.quarantine node_modules/electron/dist/Electron.app`
 

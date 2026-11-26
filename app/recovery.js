@@ -1,0 +1,1 @@
+document.querySelector('#retry').addEventListener('click',()=>window.desktop.reload());document.querySelector('#quit').addEventListener('click',()=>window.desktop.windowAction('close'));window.desktop.onPrepareClose(()=>window.desktop.closeReady());

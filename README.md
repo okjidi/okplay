@@ -1,160 +1,70 @@
-# OK基地-专用播放器（OKPlay）
+# 新 OKPlay 桌面端
 
-OK基地课程**专用桌面播放器**，基于 Electron。
+双击「启动新版OKPlay.cmd」或运行 `npm start`，使用正式学员账号登录。运行时已包含，不依赖旧项目目录。
 
-学员安装后打开客户端，客户端加载云端课程页面；学员在页面中输入课程专用账号和密码，即可点播课程章节、观看视频、查看课堂笔记，并浏览源码/模版、软件/工具、特效素材等资源库。
+## 界面与数据
 
-## 界面预览
+正常启动连接 https://learn.okyolo.com，课程、独立视频、目录/分页/搜索/详情、咨询、课程激活与支付均走正式接口。失败时显示实际错误，不回退演示数据。
 
-| 登录 | 全部课程 |
-|---|---|
-| ![登录](screenshots/1-login.png) | ![全部课程](screenshots/2-all-courses.png) |
+窗口创建后立即显示，默认总宽1600px、高820px，小屏按可用尺寸收窄。左侧导航200px，右侧内容区紧接侧栏、20px内边距、正文最大1360px。全部课程为左侧独立菜单。
 
-| 源码 / 模版 | UI / 特效 / 素材 |
-|---|---|
-| ![源码模板](screenshots/3-source-library.png) | ![特效素材](screenshots/4-effects-library.png) |
+登录框按旧版380px宽、原字号和控件尺寸；静音循环背景、LOGO、申请账号、记住账号与小程序提示均对齐。拼图直接拖图、松手提交；文字验证码填满提交，错误时换题重试。只保存账号，不保存密码。
 
-![资源库](screenshots/5-effects-library-grid.png)
+学习中心包含五列我的课程、六列其他教程、激活与搜索，已移除继续学习。资源五模块为六列无框封面和14px两级目录。全部课程按分类分组，默认每组5门，可展开。
 
-## 仓库内容
+课程详情包括封面、信息、笔记下载和课时卡片。视频占满右侧，笔记位于下方；支持HLS、服务端DRM参数、进度与释放、按账号课时续播，以及定位、倍速至4×、音量、亮度、清晰度选择和全屏。
 
-| 目录 | 内容 |
-|---|---|
-| `src/` + `package.json` | **Electron 客户端**（仓库根即客户端工程） |
+资源/笔记下载展示完整地址和提取码，在系统浏览器打开HTTPS地址。微信订单只在用户点击扫码购课后创建；二维码状态以服务端为准，无自动购买或客户端自判支付成功。
 
-**本仓库只包含桌面客户端。** 学员端页面源码、业务服务端与管理后台都不在仓库内 ——
-客户端运行时加载的是云端页面 `https://learn.okyolo.com`，源码安装/打包都不需要它们。
+## 安全与运行
 
-## 安装
+本地界面位于固定生产域名专用路径；API交由Chromium HTTPS网络栈。HttpOnly/Secure会话、系统加密设备标识、sandbox/contextIsolation/webSecurity保持启用；仅本页面全屏权限放行。不复制旧客户端Cookie，首次需要登录。
 
-**Windows** —— 三种形式，都在 [Releases](https://github.com/okjidi/okplay/releases) 下载：
+- CSP 已收敛：`connect-src 'self' blob: https://vod.okyolo.com`、`img-src 'self' data:`、`media-src 'self' blob:`，不再放行任意 HTTPS
+- 生产禁用 DevTools（仅未打包时可用 `--dev-tools`），应用菜单已清空，F12/Ctrl+Shift+I/J/C 被拦截
+- 下载被拦截（`will-download` preventDefault）
+- userData 使用 `%APPDATA%\OKPlay`；首次运行会从旧 `OKPlay-Desktop-Preview` 迁移设备标识与日志
+- 更新检查：默认地址 `https://learn.okyolo.com/app/update.json`（`package.json` 的 `okplay.updateFeed`），可用环境变量 `OKPLAY_UPDATE_URL` 覆盖。该文件内容为 `{ "version": "x.y.z", "url": "https://…/OKPlay-x.y.z-x64.exe", "sha256": "<安装包 SHA-256>" }`；启动时检查，有新版本时最小化按钮右侧出现绿色「更新」按钮，Windows 安装版点击后自动下载、校验、静默安装并重启。便携版请用新版压缩包更新
 
-| 形式 | 文件 | 桌面图标 | 说明 |
-|---|---|---|---|
-| **安装版** | `OKPlay-<版本>-setup.exe` | **自动创建** | 双击即装，开始菜单 + 桌面快捷方式。**推荐** |
-| **免安装版** | `OKPlay-<版本>-x64.zip` | 双击里面的 `创建桌面快捷方式.bat` | 解压即用，不写注册表 |
-| **源码** | `Source code (zip)` | `npm run shortcut` | 见下方，需要 Node.js |
+HLS、QRCode及许可证在 `app/vendor`。原始背景视频和原版图标随项目提供。
 
-> ⚠️ **首次运行会被 SmartScreen 拦一下。** 这是**未签名**应用的正常提示，不是病毒 ——
-> 点「更多信息」→「**仍要运行**」。原因与取舍见「已知限制」。
->
-> 安装版是**装到用户目录**（`%LOCALAPPDATA%\Programs\OKPlay`）的，**不会弹 UAC**，
-> 也不需要管理员权限。卸载时**保留**登录态与设备标识，重装不会被当成新设备。
->
-> **免安装版没有安装器，所以不会自动建桌面图标** —— 双击解压目录里的
-> `创建桌面快捷方式.bat` 即可补上。源码安装同理，跑 `npm run shortcut`。
+## 验收
 
-**macOS** —— 只提供源码安装（见下方「源码安装」）。
+- `npm test`：820px默认高度下的隔离Electron交互验收，不写生产；可追加 `-- --qa-visible`。
+- `npm run test:unit`：**23 项**（安全边界、CSP、DevTools/下载拦截、资源入口、媒体范围请求、笔记 XSS、更新检查）。
+- `npm run check:production`：独立会话检查健康、未登录身份、验证码和空参数来源校验，不提交账号密码。
+- `npm run audit:reference`：对已保存的旧版只读副本运行隔离截图对照。
+- `npm run dist`：electron-builder 出 `release/OKPlay-<版本>-x64.exe`（NSIS）与同名 `.zip`；卸载保留 userData。
+- `npm run dist:release`：先打包到 `release/`，再生成 `release/update.json` 更新源。
+- `npm run update:feed -- <目录>`：为已有产物单独生成 `update.json`。
 
-### 源码安装（Windows / macOS）
+**仍需人工**：真实学员账号登录、CDN/DRM 播放、微信扫码支付与回调，自动化无法替代。
 
-前提：**Node.js LTS（≥20）** 与 **git**。
+完整检查报告：`design/全面检查-20261125/检查报告.md`。旧版、修复前/后、登录框尺寸对照和16项总览均在该目录。截图使用隔离合成数据；真实账号生产CDN/DRM及真实支付回调尚未实操验证。
 
-**Windows**
 
-```bash
-git clone https://github.com/okjidi/okplay.git
-cd okplay
-npm install
-npm start            # 先跑一次，确认窗口能打开（这一步同时完成构建）
-npm run shortcut     # 可选：在桌面建 okplay.lnk，以后双击就能开
-```
+## 0.3.0 上线优化与候选包（2026-11-26）
 
-**macOS**
+已完成HLS/二维码按需加载、首屏图片优化、GET并发合并与会话取消、播放错误释放与旧响应隔离、订单复用及串行查询、单实例、关闭前清理、崩溃重载页和限量日志。Electron45.5.0使用异步safeStorage。
 
-```bash
-git clone https://github.com/okjidi/okplay.git
-cd okplay
-npm install
-npm start            # 先跑一次，确认窗口能打开（这一步同时完成构建）
-npm run shortcut     # 可选：在桌面生成 okplay.app
-```
+首屏脚本705401→69347字节，约减少90.2%（不是启动耗时比例）。保留当前1600×820、200px侧栏及现有布局。
 
-> `npm run shortcut` 每次会先跑 `npm run build`，所以单独先建图标也不会出现
-> 「双击没反应」—— 但如果构建失败，它会直接报错退出。
->
-> macOS 上没有「快捷方式」，`npm run shortcut` 会生成一个 `.app`：
-> 图标取自仓库内预生成的 `build/icon.icns`，双击直接启动，日志在 `/tmp/okplay-start.log`
-> （启动失败先看这个文件）。若图标仍显示成 AppleScript 的默认脚本图标，
-> 先删掉桌面的 `okplay.app` 再跑一次 `npm run shortcut`，仍不对就 `killall Finder`。
-> macOS 上如果首次运行提示「无法打开 Electron」，执行一次：
-> `xattr -dr com.apple.quarantine node_modules/electron/dist/Electron.app`
+正式数据目录为 `%APPDATA%/OKPlay`，首次可迁移本新版预览目录；日志在其logs子目录，不保存密码、Cookie、令牌或签名地址。
 
-> **国内网络提示**：`npm install` 需要下载约 100–150 MB 的 Electron 运行时。本仓库内置了镜像配置与兜底脚本（`scripts/ensure-electron.mjs`），安装时会自动处理。**不要删掉 `postinstall`。**
+- `npm run dist:candidate`：本地生成Windows候选安装包和便携包，不自动发布。
+- `npm run verify:release`：核对包内源码、资源引用、测试数据排除及SHA256。
+- 本轮验证的文件在 `release-candidate/`，请勿与原release目录旧包混用。
+- 发行程序启动、单实例与诊断参数拒绝已实测；真实账号CDN/DRM、实际支付、干净Windows安装升级仍需最终验收，包当前未签名。
 
-## 开发
+完整报告：`design/上线优化-20261125/上线优化报告.md`；使用说明：`release-candidate/发行说明.md`。
 
-**`npm start` 连的是生产** —— 源码安装就是给学员「装上就能用」的那条路。
-要开发客户端（本机 Vite、开 devtools），用 **`npm run dev`**：
+## 一键更新（0.3.1）
 
-```bash
-# 终端 1：起学员端页面
-# ⚠️ web/ 不在本仓库里（学员端页面源码不公开分发）。
-#    只有内部开发环境才有这个目录；外部克隆的仓库直接 `npm run dev` 会连不到页面。
-cd web
-npm install
-npm run dev
+适用于 Windows NSIS 安装版。更新源仍使用 OKPLAY_UPDATE_URL，元数据包含新版版本号、HTTPS 安装包地址和 SHA-256。点击绿色「更新」按钮后，客户端下载并校验安装包，提交最终播放进度与释放授权，再启动 NSIS 静默更新并自动重新打开。用户可在下载或启动安装失败后重试。
 
-# 终端 2：起客户端（--dev = 指向 http://localhost:5173 + 开 devtools）
-npm run dev
-```
+## 版本与发布
 
-> **判据只有 `--dev` 一个。** 早先这里按「没打包就算开发态」判断，结果源码安装
-> 双击图标后指向 `localhost:5173`，学员机器上那里什么都没有 —— 表现是双击没反应。
-> 现在打包版、源码安装都连生产，只有 `npm run dev` 走本机。
-
-环境变量：
-
-```bash
-# 指到别处（预发、本机、任意地址）
-OKPLAY_ORIGIN=https://<课程域名> npm start
-
-# 页面连真实后端（默认 VITE_DEMO=1 走演示数据）
-cd web && VITE_DEMO=0 npm run dev
-```
-
-检查（提交前）：
-
-```bash
-npm run verify    # 类型检查 + 安全基线静态断言
-```
-
-## 打包
-
-```bash
-npm run dist
-```
-
-产出在 `release/`：
-
-- `OKPlay-<版本>-setup.exe` —— nsis 安装版
-- `OKPlay-<版本>-x64.zip` —— 免安装版
-
-配置见 `electron-builder.yml`。**只做 Windows** —— macOS 未签名/未公证的包在 Apple
-Silicon 上会被报「已损坏」，所以 macOS 那条路走源码安装（理由见「已知限制」）。
-
-> 首次打包会下载 electron-builder 的辅助二进制（nsis、winCodeSign）。国内网络若卡住，
-> 设 `ELECTRON_BUILDER_BINARIES_MIRROR=https://registry.npmmirror.com/-/binary/electron-builder-binaries/`
-> 后重跑。
->
-> **课程域名是编译进产物的**（`src/shared/contracts.ts` 的 `PRODUCTION_ORIGIN`）。
-> 安装版从开始菜单启动时读不到环境变量，只能靠它。
-
-## 设计要点
-
-- **客户端是薄壳**：加载云端课程页面，页面**不打包进客户端**。页面改版即时生效，无需更新客户端。
-- **自带 Chromium**：播放环境不依赖用户电脑上安装的浏览器版本。
-- **安全基线**：`contextIsolation` / `sandbox` / `webSecurity` 逐项显式设定，不依赖 Electron 默认值；远程页面在 preload 处的暴露面保持最小。
-- **客户端内不做授权判定**：播放权限一律由服务端校验。
-- **播放器自绘**：`<video>` + 自绘控制条 + hls.js。不用厂商播放器 SDK。
-- **不使用 `<webview>`**；导航限定在自有域名；页面权限请求默认全拒。
-
-## 已知限制
-
-- **不提供代码签名与公证。** Windows 安装包首次运行会出现 SmartScreen 提示（「更多信息」→「仍要运行」）；macOS 因此只提供源码安装 —— 源码安装运行的是 Electron 官方已签名并公证的二进制，不受 Gatekeeper 影响。
-- **不提供静默自动更新。** 客户端只做版本提示与更新入口。
-- **国内下载 GitHub Releases 可能缓慢或失败。**
-
-## 许可
-
-<!-- 待补 -->
+- 版本号在 `package.json` 的 `version`，当前 `0.4.0`；应用内「我的账号」弹窗显示运行版本。
+- 打包：`npm run dist:release` → `release/OKPlay-<版本>-x64.exe`、`.zip`、`update.json`、`release-manifest.json`。
+- 发布：把 `.exe` 与 `update.json` 上传到 `https://learn.okyolo.com/app/`，`update.json` 里的 `url`/`sha256` 必须与实际安装包一致。
+- 升级时先改 `version`（如 `0.4.1`）再打包，保证新版本号大于已安装版本，否则客户端不会提示更新。

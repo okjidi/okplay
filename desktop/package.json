@@ -1,0 +1,86 @@
+{
+  "name": "okplay-desktop",
+  "version": "0.4.1",
+  "private": true,
+  "main": "main.cjs",
+  "scripts": {
+    "start": ".\\runtime-45.5.0\\electron.exe .",
+    "test": ".\\runtime-45.5.0\\electron.exe . --qa",
+    "check:production": ".\\runtime-45.5.0\\electron.exe . --check-production",
+    "test:unit": "node --test test/*.test.cjs",
+    "audit:reference": ".\\runtime-45.5.0\\electron.exe . --audit-reference",
+    "dist": "electron-builder --win",
+    "dist:candidate": "electron-builder --win --publish never --config.directories.output=release-candidate && node tools/make-update-feed.cjs release-candidate && npm run verify:release",
+    "verify:release": "node tools/verify-release.cjs release-candidate",
+    "update:feed": "node tools/make-update-feed.cjs",
+    "dist:release": "electron-builder --win --publish never --config.directories.output=release && node tools/make-update-feed.cjs release"
+  },
+  "productName": "OKPlay",
+  "description": "OK基地课程桌面客户端",
+  "devDependencies": {
+    "@electron/asar": "4.3.4",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "cn.okbase.okplay.desktop",
+    "productName": "OKPlay",
+    "directories": {
+      "output": "release",
+      "buildResources": "app/assets"
+    },
+    "electronDist": "runtime-45.5.0",
+    "electronVersion": "45.5.0",
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "desktop-service.cjs",
+      "identity.cjs",
+      "lifecycle.cjs",
+      "update-check.cjs",
+      "app/*.js",
+      "app/*.css",
+      "app/*.html",
+      "app/vendor/**",
+      "app/assets/nav*.png",
+      "app/assets/avatar.png",
+      "app/assets/ok-logo.webp",
+      "app/assets/login-bg.mp4",
+      "app/assets/icon.ico",
+      "!**/*.map"
+    ],
+    "asar": true,
+    "win": {
+      "icon": "app/assets/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "OKPlay-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "OKPlay",
+      "deleteAppDataOnUninstall": false
+    }
+  },
+  "overrides": {
+    "minimatch@>=7.0.0 <11.0.1": "11.0.9"
+  },
+  "okplay": {
+    "updateFeed": "https://learn.okyolo.com/app/update.json"
+  }
+}

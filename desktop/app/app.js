@@ -7,7 +7,8 @@ const eyebrows={tools:'TOOLS',source:'SOURCE',ai:'PLATFORMS',models:'MODELS / GI
 const stage=document.querySelector('#stage'),modal=document.querySelector('#modal');
 const pageBackdrop=document.createElement('div');pageBackdrop.className='page-background';pageBackdrop.setAttribute('aria-hidden','true');pageBackdrop.innerHTML='<video src="assets/login-bg.mp4" autoplay muted loop playsinline preload="auto"></video>';
 let page='loading',account=null,data=null,course=null,currentLesson=null,currentVideo=null,viewSeq=0;
-let groups=[],primary=0,secondary=0,resourcePage=0,resourceLimit=18,resourceItems=[],resourceTotal=0,resourceLoading=false,resourceError='';
+const baseResourceLimit=()=>innerWidth<800?9:18;
+let groups=[],primary=0,secondary=0,resourcePage=0,resourceLimit=baseResourceLimit(),resourceItems=[],resourceTotal=0,resourceLoading=false,resourceError='';
 let catalogExpanded={},pickedCourse=null,payTimer=null,paySeq=0,paymentCreating=false,payPollAbort=null;
 const pendingPaymentOrders=new Map();
 let catalogGroup=0,catalogQuery='',searchTimer,searchSeq=0,loginBusy=false,authSubmitting=false,captcha=null,captchaTimer,captchaCountdownTimer,captchaCredentials=null,externalUrl='';
@@ -104,10 +105,24 @@ async function navigate(target){
  await stopPlayback();const seq=++viewSeq;page=target;playerError='';
  if(target==='home'){render();try{const result=await bootstrap();if(seq===viewSeq){data=result;render();}}catch(error){if(seq===viewSeq&&page!=='login')stage.querySelector('main').innerHTML='<div class="content">'+errorView(error.message,'refresh-home')+'</div>';}return;}
  if(target==='catalog'){catalogGroup=0;catalogQuery='';catalogExpanded={};render();return;}
- if(kinds[target]){primary=secondary=resourcePage=0;groups=[];resourceItems=[];resourceLoading=true;resourceError='';render();try{const result=await api('/resources/'+kinds[target]);if(seq!==viewSeq)return;groups=result.groups;await loadResourceItems();}catch(error){if(seq===viewSeq){resourceLoading=false;resourceError=error.message;render();}}return;}
+ if(kinds[target]){primary=secondary=resourcePage=0;resourceLimit=baseResourceLimit();groups=[];resourceItems=[];resourceLoading=true;resourceError='';render();try{const result=await api('/resources/'+kinds[target]);if(seq!==viewSeq)return;groups=result.groups;await loadResourceItems();}catch(error){if(seq===viewSeq){resourceLoading=false;resourceError=error.message;render();}}return;}
  render();
 }
-async function loadResourceItems(){resourceLimit=innerWidth<800?9:18;const seq=++viewSeq,module=page,sub=groups[primary]?.subs?.[secondary];resourceLoading=true;resourceError='';resourceItems=[];render();if(!sub){resourceLoading=false;render();return;}try{const result=await api(`/resources/${kinds[module]}/sub/${encode(sub.id)}?limit=${resourceLimit}&offset=${resourcePage*resourceLimit}`);if(seq!==viewSeq||page!==module)return;resourceItems=result.items;resourceTotal=result.total;resourceLoading=false;render();}catch(error){if(seq===viewSeq&&page===module){resourceLoading=false;resourceError=error.message;render();}}}
+let resourceFitting=false;
+async function fitResourceToScreen(){
+ if(resourceFitting||!kinds[page])return;resourceFitting=true;
+ try{
+  for(let guard=0;guard<4;guard++){
+   const main=document.querySelector('main'),grid=document.querySelector('.resource-grid');
+   if(!main||!grid||main.scrollHeight<=main.clientHeight+2)break;
+   const cols=getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length||1;
+   if(resourceLimit<=cols)break;
+   resourceLimit=Math.max(cols,Math.floor((resourceLimit-1)/cols)*cols);resourcePage=0;
+   await loadResourceItems();await new Promise(r=>setTimeout(r,60));
+  }
+ }finally{resourceFitting=false;}
+}
+async function loadResourceItems(){const seq=++viewSeq,module=page,sub=groups[primary]?.subs?.[secondary];resourceLoading=true;resourceError='';resourceItems=[];render();if(!sub){resourceLoading=false;render();return;}try{const result=await api(`/resources/${kinds[module]}/sub/${encode(sub.id)}?limit=${resourceLimit}&offset=${resourcePage*resourceLimit}`);if(seq!==viewSeq||page!==module)return;resourceItems=result.items;resourceTotal=result.total;resourceLoading=false;const _m=document.querySelector('main');if(_m)_m.scrollTop=0;render();if(!resourceFitting)requestAnimationFrame(()=>void fitResourceToScreen());}catch(error){if(seq===viewSeq&&page===module){resourceLoading=false;resourceError=error.message;render();}}}
 async function openCourse(id){await stopPlayback();const seq=++viewSeq;page='detail';course=null;render();try{const result=await api('/courses/'+encode(id));if(seq!==viewSeq)return;course=result;render();}catch(error){if(seq===viewSeq&&page!=='login')stage.querySelector('main').innerHTML='<div class="content">'+errorView(error.message,'owned:'+id)+'</div>';}}
 function openResourceSearch(){modal.className='resource-search-modal';modal.innerHTML=`<h2>搜索${nameOf(page)}</h2>${searchInput('搜索当前模块的全部资源','resource-query')}<div id="resource-search-results"><p class="empty">输入关键词，搜索当前模块全部资源</p></div><div>${btn('关闭','dismiss')}</div>`;modal.showModal();document.querySelector('#resource-query').focus();}
 async function searchResources(query){const seq=++searchSeq,module=page,resultEl=document.querySelector('#resource-search-results');if(!query.trim()){resultEl.innerHTML='<p class="empty">输入关键词，搜索当前模块全部资源</p>';return;}resultEl.innerHTML='<p class="empty">正在搜索…</p>';try{const result=await api(`/resources/${kinds[module]}/search?q=${encode(query.trim())}&limit=30`);if(seq!==searchSeq||!modal.open||page!==module||!document.querySelector('#resource-search-results'))return;resultEl.innerHTML=result.items.length?resourceCards(result.items):'<p class="empty">没有找到匹配的资源</p>';}catch(error){if(seq===searchSeq&&modal.open&&document.querySelector('#resource-search-results'))resultEl.innerHTML=errorView(error.message,'search-retry');}}
@@ -300,3 +315,5 @@ void (window.desktop?.version?.()||Promise.resolve('')).then(v=>{appVersion=v||'
 void boot();
 })();
 
+
+addEventListener('resize',()=>{if(kinds[page])requestAnimationFrame(()=>void fitResourceToScreen());});

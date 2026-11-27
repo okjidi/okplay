@@ -112,14 +112,19 @@ let resourceFitting=false;
 async function fitResourceToScreen(){
  if(resourceFitting||!kinds[page])return;resourceFitting=true;
  try{
-  for(let guard=0;guard<4;guard++){
-   const main=document.querySelector('main'),grid=document.querySelector('.resource-grid');
-   if(!main||!grid||main.scrollHeight<=main.clientHeight+2)break;
-   const cols=getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length||1;
-   if(resourceLimit<=cols)break;
-   resourceLimit=Math.max(cols,Math.floor((resourceLimit-1)/cols)*cols);resourcePage=0;
-   await loadResourceItems();await new Promise(r=>setTimeout(r,60));
-  }
+  const main=document.querySelector('main'),grid=document.querySelector('.resource-grid'),card=grid?.querySelector('.resource-card');
+  if(!main||!grid||!card)return;
+  const cols=getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length||1;
+  const gap=parseFloat(getComputedStyle(grid).rowGap)||14;
+  const cardH=card.getBoundingClientRect().height;
+  const pager=document.querySelector('.resource-pagination');
+  const pagerH=pager?pager.getBoundingClientRect().height:40;
+  const topInMain=grid.getBoundingClientRect().top-main.getBoundingClientRect().top;
+  const avail=main.clientHeight-topInMain-pagerH-16;
+  // 行数只由可视高度决定：至少 2 行、最多 3 行。
+  const rows=Math.max(2,Math.min(3,Math.floor((avail+gap)/(cardH+gap))));
+  const limit=Math.max(cols,cols*rows);
+  if(limit!==resourceLimit){resourceLimit=limit;resourcePage=0;await loadResourceItems();}
  }finally{resourceFitting=false;}
 }
 async function loadResourceItems(){const seq=++viewSeq,module=page,sub=groups[primary]?.subs?.[secondary];resourceLoading=true;resourceError='';resourceItems=[];render();if(!sub){resourceLoading=false;render();return;}try{const result=await api(`/resources/${kinds[module]}/sub/${encode(sub.id)}?limit=${resourceLimit}&offset=${resourcePage*resourceLimit}`);if(seq!==viewSeq||page!==module)return;resourceItems=result.items;resourceTotal=result.total;resourceLoading=false;const _m=document.querySelector('main');if(_m)_m.scrollTop=0;render();if(!resourceFitting)requestAnimationFrame(()=>void fitResourceToScreen());}catch(error){if(seq===viewSeq&&page===module){resourceLoading=false;resourceError=error.message;render();}}}

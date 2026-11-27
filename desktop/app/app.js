@@ -312,8 +312,7 @@ let preparingClose=false;
 window.desktop.onPrepareClose(async()=>{if(preparingClose)return;preparingClose=true;stopPaymentPolling();try{await stopPlayback();}finally{window.desktop.closeReady();}});
 addEventListener('visibilitychange',()=>{for(const video of [pageBackdrop.querySelector('video'),document.querySelector('.login-background')])if(video){if(document.hidden)video.pause();else if(video.isConnected)video.play().catch(()=>{});}});
 void (window.desktop?.version?.()||Promise.resolve('')).then(v=>{appVersion=v||'';}).catch(()=>{});
+addEventListener('resize',()=>{if(kinds[page])requestAnimationFrame(()=>void fitResourceToScreen());});
 void boot();
 })();
 
-
-addEventListener('resize',()=>{if(kinds[page])requestAnimationFrame(()=>void fitResourceToScreen());});

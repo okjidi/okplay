@@ -1,0 +1,11 @@
+{
+  "passed": true,
+  "checks": [
+    "unsigned rejected before download",
+    "wrong-key rejected before download",
+    "signed download, hash and execution-time verification accepted",
+    "verified installer launch simulated; application closed"
+  ],
+  "productionRequests": false,
+  "nativeInstallerExecuted": false
+}

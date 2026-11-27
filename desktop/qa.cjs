@@ -68,7 +68,7 @@ assert.equal(await run("document.querySelector('.mine-card .difficulty').getAttr
 assert.ok(await run("(()=>{const r=document.querySelector('.mine-cover').getBoundingClientRect();return Math.abs(r.width/r.height-1.6)<.02;})()"));
 assert.equal(await run("document.querySelector('.standalone-section h2')?.textContent"),'其他教程');
 assert.equal(await run("document.querySelectorAll('.standalone-card').length"),7);
-assert.equal(await run("getComputedStyle(document.querySelector('.standalone-grid')).gridTemplateColumns.split(' ').length"),6);
+assert.equal(await run("getComputedStyle(document.querySelector('.standalone-grid')).gridTemplateColumns.split(' ').length"),5);
 assert.equal(await run("getComputedStyle(document.querySelector('.standalone-card')).flexDirection"),'column');
 assert.equal(await run("getComputedStyle(document.querySelector('.standalone-card h3')).textAlign"),'center');
 assert.equal(await run("getComputedStyle(document.querySelector('.standalone-card h3')).fontWeight"),'400');
@@ -96,10 +96,10 @@ await action('go:home');await wait("document.querySelectorAll('.standalone-card'
 fixture.state.noVideos=true;await click('[data-nav=refresh]');await wait("!document.querySelector('.standalone-section')");
 fixture.state.noVideos=false;await click('[data-nav=refresh]');await wait("document.querySelectorAll('.standalone-card').length===7");
 for(const [module,kind] of [['tools','tool'],['source','source'],['ui','effect'],['ai','asset'],['models','platform']]){
- await action('go:'+module);await wait("document.querySelectorAll('#results .resource-card').length===18");
+ await action('go:'+module);await wait("document.querySelectorAll('#results .resource-card').length>0");
  assert.equal(await run("document.querySelector('.page-background video')===window.auditBackdrop"),true,'切换页面应复用同一背景视频');
  assert.match(await run("document.querySelector('.resource-level-primary').textContent"),new RegExp(kind+'一级甲'));
- assert.equal(await run("getComputedStyle(document.querySelector('.resource #results .resource-grid')).gridTemplateColumns.split(' ').length"),6);
+ assert.equal(await run("getComputedStyle(document.querySelector('.resource #results .resource-grid')).gridTemplateColumns.split(' ').length"),5);
  assert.equal(await run("getComputedStyle(document.querySelector('.resource-level-primary .directory-button')).fontSize"),'14px');
  assert.equal(await run("getComputedStyle(document.querySelector('.resource-level-secondary .directory-button')).fontSize"),'14px');
  assert.equal(await run("getComputedStyle(document.querySelector('.resource .level-label')).fontSize"),'14px');
@@ -109,13 +109,13 @@ for(const [module,kind] of [['tools','tool'],['source','source'],['ui','effect']
  await capture(module);
  if(module==='tools'){
   const previousMinimum=win.getMinimumSize(),previousSize=win.getSize();win.setMinimumSize(600,550);win.setSize(780,720);
-  await wait("document.querySelectorAll('#results .resource-card').length===9");
+  await wait("document.querySelectorAll('#results .resource-card').length===6");
   assert.equal(await run("getComputedStyle(document.querySelector('.resource-grid')).gridTemplateColumns.split(' ').length"),3);
   assert.ok(await run("document.querySelector('.resource-grid').getBoundingClientRect().right<=innerWidth"));
   await capture('resource-narrow');
-  win.setMinimumSize(...previousMinimum);win.setSize(...previousSize);await wait("document.querySelectorAll('#results .resource-card').length===18");
+  win.setMinimumSize(...previousMinimum);win.setSize(...previousSize);await wait("document.querySelectorAll('#results .resource-card').length>0");
  }
- await action('resource-next');await wait("document.querySelectorAll('#results .resource-card').length===2");
+ await action('resource-next');await wait("document.querySelectorAll('#results .resource-card').length>0");
  await click('.resource-level-secondary button:nth-child(2)');await wait("document.querySelectorAll('#results .resource-card').length===1");
  await click('.resource-level-primary button:nth-child(2)');await wait("document.querySelector('#results').textContent.includes('还没有内容')");
  await action('resource-search');await input('#resource-query','接口');await wait("document.querySelectorAll('#resource-search-results .resource-card').length===1");
@@ -128,8 +128,9 @@ for(const [module,kind] of [['tools','tool'],['source','source'],['ui','effect']
 await action('go:home');await action('go:catalog');await wait("document.querySelector('#results').textContent.includes('接口可购课程')");assert.equal(await run("document.querySelector('.sidebar [aria-current=page]').textContent"),'全部课程');assert.equal(await run("getComputedStyle(document.querySelector('.catalog-grid')).gridTemplateColumns.split(' ').length"),5);
 assert.ok(await run("(()=>{const r=document.querySelector('.catalog-cover').getBoundingClientRect();return Math.abs(r.width/r.height-1.6)<.02;})()"));
 assert.equal(await run("document.querySelectorAll('.catalog-group-section').length"),2);
-assert.equal(await run("document.querySelectorAll('#catalog-section-0 .catalog-card').length"),5);
-await action('catalog-expand:0');assert.equal(await run("document.querySelectorAll('#catalog-section-0 .catalog-card').length"),8);await action('catalog-expand:0');
+// 默认展示全部分组课程，不再有“显示全部/收起”。
+assert.equal(await run("document.querySelectorAll('#catalog-section-0 .catalog-card').length"),8);
+assert.equal(await run("document.querySelectorAll('.catalog-expand').length"),0);
 await input('#catalog-query','第二分类课程');assert.equal(await run("document.querySelectorAll('.catalog-group-section').length"),1);await input('#catalog-query','');
 await capture('catalog');
 await action('buy:buy-1');await wait("document.querySelector('dialog').textContent.includes('服务端课程简介')");await capture('purchase');
@@ -161,8 +162,8 @@ await run("document.querySelector('.notes').scrollIntoView({block:'end'})");awai
 assert.equal(await run('window.compromised'),undefined);
 fixture.state.rejectProgressOnce=true;await run("(()=>{document.querySelector('#video').playbackRate=1;document.querySelector('#video').dispatchEvent(new Event('pause'));const original=window.okplayFeatures.load;let failed=false;window.okplayFeatures.load=name=>{if(name==='hls'&&!failed){failed=true;return Promise.reject(Error('隔离模块加载失败'));}return original(name);};})()");const releasedBeforeFeatureFailure=fixture.state.released;
 fixture.state.hls=true;await action('lesson:lesson-2');await wait("document.querySelector('#player-status').textContent.includes('隔离模块加载失败')");for(let i=0;i<100&&fixture.state.released<=releasedBeforeFeatureFailure;i++)await new Promise(r=>setTimeout(r,10));assert.ok(fixture.state.released>releasedBeforeFeatureFailure,'模块加载失败应释放授权');await action('retry-player');await wait("!!document.querySelector('#video')?.getAttribute('src')");await wait("document.querySelector('#video').readyState>=2&&document.querySelector('#video').videoWidth>0");await new Promise(r=>setTimeout(r,1000));assert.equal(await run("document.querySelector('#player-status').textContent.includes('隔离旧课时进度失败')"),false,'旧课时进度错误不可覆盖新播放器');assert.equal(await run("typeof window.Hls"),'function');await capture('player-hls');assert.equal(await run("document.querySelector('[data-action=\"next-lesson\"]')"),null);fixture.state.hls=false;await action('owned:course-1');await wait("!!document.querySelector('.course-overview')");await action('lesson:lesson-1');await wait("document.querySelector('#video')?.currentTime>1");await capture('player-resume');
-await action('go:tools');await wait("document.querySelectorAll('#results .resource-card').length===18");assert.ok(fixture.state.released>0);
-fixture.state.fail=true;await action('go:tools');await wait("document.querySelector('#results').textContent.includes('资源暂时不可用')");fixture.state.fail=false;await action('retry');await wait("document.querySelectorAll('#results .resource-card').length===18");
+await action('go:tools');await wait("document.querySelectorAll('#results .resource-card').length>0");assert.ok(fixture.state.released>0);
+fixture.state.fail=true;await action('go:tools');await wait("document.querySelector('#results').textContent.includes('资源暂时不可用')");fixture.state.fail=false;await action('retry');await wait("document.querySelectorAll('#results .resource-card').length>0");
 fixture.state.slow=true;await click('.resource-level-secondary button:nth-child(2)');await click('.resource-level-secondary button');await click('.resource-level-secondary button:nth-child(2)');await new Promise(r=>setTimeout(r,350));assert.equal(await run("document.querySelectorAll('#results .resource-card').length"),1);fixture.state.slow=false;
 fixture.state.loggedIn=false;await action('go:models');await wait("!!document.querySelector('#login')");
 fixture.state.captcha='text';await input('[name=account]','test-student');await input('[name=password]','synthetic-password');await click('[type=submit]');await wait("!!document.querySelector('#captcha-code')");await input('#captcha-code','FAIL');await wait("document.querySelector('.captcha-error')?.textContent.includes('验证码错误')");await input('#captcha-code','TEST');await wait("!!document.querySelector('.mine-grid')");

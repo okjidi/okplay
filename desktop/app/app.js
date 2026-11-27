@@ -9,7 +9,7 @@ const pageBackdrop=document.createElement('div');pageBackdrop.className='page-ba
 let page='loading',account=null,data=null,course=null,currentLesson=null,currentVideo=null,viewSeq=0;
 const baseResourceLimit=()=>innerWidth<800?9:18;
 let groups=[],primary=0,secondary=0,resourcePage=0,resourceLimit=baseResourceLimit(),resourceItems=[],resourceTotal=0,resourceLoading=false,resourceError='';
-let catalogExpanded={},pickedCourse=null,payTimer=null,paySeq=0,paymentCreating=false,payPollAbort=null;
+let pickedCourse=null,payTimer=null,paySeq=0,paymentCreating=false,payPollAbort=null;
 const pendingPaymentOrders=new Map();
 let catalogGroup=0,catalogQuery='',searchTimer,searchSeq=0,loginBusy=false,authSubmitting=false,captcha=null,captchaTimer,captchaCountdownTimer,captchaCredentials=null,externalUrl='';
 let controls=null,media=null,hls=null,grant=null,heartbeat=null,progressSequence=0,playerEpoch=0,playerError='',notes='',rate=1,muted=false;
@@ -47,7 +47,8 @@ function home(){
 function catalogCard(c){const level=Math.min(5,Math.max(0,Math.round(Number(c.difficulty)||0)));return `<button class="pane catalog-card" data-action="buy:${esc(c.id)}"><span class="catalog-cover">${picture(c.coverUrl,'',c.title,{small:c.coverUrlSmall})}<span class="catalog-lesson-count">${esc(c.lessonCount)} 课时</span></span><h3>${esc(c.title)}</h3><span class="catalog-meta">${c.amount==null?'':`<span class="catalog-price">¥${Number(c.amount).toLocaleString('zh-CN',{maximumFractionDigits:2})}</span>`}${level?`<span class="difficulty" role="img" aria-label="难易度 ${level} 星，共 5 星"><span>难易度</span><span class="filled-stars">${'★'.repeat(level)}</span><span class="empty-stars">${'★'.repeat(5-level)}</span></span>`:''}</span></button>`;}
 function catalogCards(){
  const categories=data?.available?.categories||[];
- return categories.map((group,i)=>{const rows=group.courses.filter(c=>c.title.toLowerCase().includes(catalogQuery.toLowerCase()));if(!rows.length)return '';const expanded=!!catalogExpanded[i];return `<section id="catalog-section-${i}" class="catalog-group-section"><h2>${esc(group.name)}</h2><div class="catalog-grid">${(expanded?rows:rows.slice(0,5)).map(catalogCard).join('')}</div>${rows.length>5?`<button class="btn catalog-expand" data-action="catalog-expand:${i}" aria-expanded="${expanded}">${expanded?'收起':'显示全部（共 '+rows.length+' 门）'}</button>`:''}</section>`;}).join('')||'<p class="empty">没有找到匹配的课程</p>';
+ // 全部课程默认展示每一组的全部课程，不再提供“显示全部 / 收起”。
+ return categories.map((group,i)=>{const rows=group.courses.filter(c=>c.title.toLowerCase().includes(catalogQuery.toLowerCase()));if(!rows.length)return '';return `<section id="catalog-section-${i}" class="catalog-group-section"><h2>${esc(group.name)}</h2><div class="catalog-grid">${rows.map(catalogCard).join('')}</div></section>`;}).join('')||'<p class="empty">没有找到匹配的课程</p>';
 }
 function catalog(){const cats=data?.available?.categories||[],open=data?.available?.showAvailable;return `<div class="catalog content"><div class="catalog-head">${open?`<nav class="filters" aria-label="课程分类">${cats.map((c,i)=>btn(esc(c.name),'catalog-group:'+i,'btn toolbar-blue')).join('')}</nav>`:''}${searchInput('搜索全部课程','catalog-query')}${btn('在线咨询','support','btn toolbar-consult')}</div>${open?`<div id="results">${catalogCards()}</div>`:'<p class="empty">管理员暂未开放全部课程，已授权课程可在学习中心查看。</p>'}</div>`;}
 function detail(){
@@ -104,7 +105,7 @@ async function bootstrap(){return api('/bootstrap');}
 async function navigate(target){
  await stopPlayback();const seq=++viewSeq;page=target;playerError='';
  if(target==='home'){render();try{const result=await bootstrap();if(seq===viewSeq){data=result;render();}}catch(error){if(seq===viewSeq&&page!=='login')stage.querySelector('main').innerHTML='<div class="content">'+errorView(error.message,'refresh-home')+'</div>';}return;}
- if(target==='catalog'){catalogGroup=0;catalogQuery='';catalogExpanded={};render();return;}
+ if(target==='catalog'){catalogGroup=0;catalogQuery='';render();return;}
  if(kinds[target]){primary=secondary=resourcePage=0;resourceLimit=baseResourceLimit();groups=[];resourceItems=[];resourceLoading=true;resourceError='';render();try{const result=await api('/resources/'+kinds[target]);if(seq!==viewSeq)return;groups=result.groups;await loadResourceItems();}catch(error){if(seq===viewSeq){resourceLoading=false;resourceError=error.message;render();}}return;}
  render();
 }
@@ -270,7 +271,7 @@ document.addEventListener('click',event=>{
  else if(action==='search-retry')await searchResources(document.querySelector('#resource-query').value);
  else if(action==='retry'){if(groups.length)await loadResourceItems();else await navigate(page);}
  else if(action==='catalog-group')document.querySelector('#catalog-section-'+Number(param))?.scrollIntoView({behavior:'smooth',block:'start'});
- else if(action==='catalog-expand'){catalogExpanded[Number(param)]=!catalogExpanded[Number(param)];document.querySelector('#results').innerHTML=catalogCards();}
+
  else if(action==='pay-wechat')await startPayment();
  else if(action==='buy')buyCourse(param);
  else if(action==='external'){if(!externalUrl||!await window.desktop.openExternal(externalUrl)){const error=modal.querySelector('.external-error');if(error)error.textContent='无法打开此地址，请手动选中复制。';else showModal('无法打开链接','<p>仅支持安全的 HTTPS 外部链接</p>');}}

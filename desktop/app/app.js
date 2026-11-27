@@ -113,18 +113,12 @@ let resourceFitting=false;
 async function fitResourceToScreen(){
  if(resourceFitting||!kinds[page])return;resourceFitting=true;
  try{
-  const main=document.querySelector('main'),grid=document.querySelector('.resource-grid'),card=grid?.querySelector('.resource-card');
-  if(!main||!grid||!card)return;
+  const grid=document.querySelector('.resource-grid'),main=document.querySelector('main');
+  if(!grid||!main)return;
   const cols=getComputedStyle(grid).gridTemplateColumns.split(' ').filter(Boolean).length||1;
-  const gap=parseFloat(getComputedStyle(grid).rowGap)||14;
-  const cardH=card.getBoundingClientRect().height;
-  const pager=document.querySelector('.resource-pagination');
-  const pagerH=pager?pager.getBoundingClientRect().height:40;
-  const topInMain=grid.getBoundingClientRect().top-main.getBoundingClientRect().top;
-  const avail=main.clientHeight-topInMain-pagerH-16;
-  // 行数只由可视高度决定：至少 2 行、最多 3 行。
-  const rows=Math.max(2,Math.min(3,Math.floor((avail+gap)/(cardH+gap))));
-  const limit=Math.max(cols,cols*rows);
+  // 高度 >= 800（内容区可视高度）放 3 行，否则 2 行；始终只在这两档之间。
+  const rows=main.clientHeight>=800?3:2;
+  const limit=cols*rows;
   if(limit!==resourceLimit){resourceLimit=limit;resourcePage=0;await loadResourceItems();}
  }finally{resourceFitting=false;}
 }

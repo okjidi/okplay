@@ -6,6 +6,7 @@ const image='/test/cover.png';
 const mine={id:'course-1',title:'接口课程甲',coverUrl:image,chapterCount:1,lessonCount:2,completedLessons:0,progressPercent:0};
 const catalog={showAvailable:true,categories:[{id:'category-1',name:'服务端课程分类',courses:Array.from({length:8},(_,i)=>({id:'buy-'+(i+1),title:i?'接口可购课程'+(i+1):'接口可购课程',coverUrl:image,chapterCount:2,lessonCount:4,amount:99,intro:'服务端课程简介',purchaseUrl:'https://example.com/course'}))},{id:'category-2',name:'第二课程分类',courses:[{id:'other-1',title:'第二分类课程',coverUrl:image,chapterCount:1,lessonCount:3,amount:null,intro:'第二组简介'}]}]};
 function createFixture(){
+ const crypto=require('node:crypto'),pair=crypto.generateKeyPairSync('ed25519');
  const state={loggedIn:false,noVideos:false,noNotes:false,captcha:'off',fail:false,slow:false,calls:[],reports:[],released:0,openedUrls:[],orderStatus:'pending',payEnabled:true,paymentCreates:0};
  const kinds=['tool','source','effect','asset','platform'];
  const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json'}});
@@ -66,6 +67,8 @@ function createFixture(){
   if(p.endsWith('/heartbeat'))return json({renew:false});
   return json({message:'fixture endpoint missing'},404);
  };
+ handler.updatePublicKey=pair.publicKey.export({type:'spki',format:'pem'}).toString();
+ handler.signUpdateFeed=feed=>{if(!feed)return null;const payload={schema:1,version:feed.version,url:feed.url,sha256:feed.sha256};if(state.updateSignatureMode==='unsigned')return payload;const key=state.updateSignatureMode==='wrong-key'?crypto.generateKeyPairSync('ed25519').privateKey:pair.privateKey;return {...payload,signature:crypto.sign(null,Buffer.from(JSON.stringify(payload)),key).toString('base64')};};
  handler.state=state;return handler;
 }
 module.exports={createFixture};

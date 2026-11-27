@@ -1,6 +1,6 @@
 {
   "name": "okplay-desktop",
-  "version": "0.4.8",
+  "version": "0.4.9",
   "private": true,
   "main": "main.cjs",
   "scripts": {
@@ -81,6 +81,7 @@
     "minimatch@>=7.0.0 <11.0.1": "11.0.9"
   },
   "okplay": {
-    "updateFeed": "https://learn.okyolo.com/app/update.json"
+    "updateFeed": "https://learn.okyolo.com/app/update.json",
+    "updatePublicKey": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAWWHEPVO5U+/BTM6+a4/tmfrb4I9++mfcFUHE6gH23dc=\n-----END PUBLIC KEY-----\n"
   }
 }

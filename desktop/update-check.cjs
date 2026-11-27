@@ -1,4 +1,5 @@
-const {createHash}=require('node:crypto');
+const {createHash,createPublicKey,verify}=require('node:crypto');
+const {createReadStream}=require('node:fs');
 const {createWriteStream}=require('node:fs');
 const fs=require('node:fs/promises');
 const path=require('node:path');
@@ -6,13 +7,8 @@ const {Readable,Transform}=require('node:stream');
 const {pipeline}=require('node:stream/promises');
 
 /**
- * 检查更新（用户触发后自动下载、校验、安装并重启）。
- *
- * 需要一个更新源：环境变量 `OKPLAY_UPDATE_URL` 指向 JSON：
- *   { "version": "0.4.0", "url": "https://…/OKPlay-0.4.0-setup.exe", "sha256": "<64位十六进制>" }
- *
- * 未配置时完全跳过（发布安装包时再填）。
- * 链接只接受 HTTPS、不允许用户名密码；打开前再校验一次。
+ * 更新只信构建时固定的Ed25519发布公钥。未配置/清单未签名，一律禁用。
+ * SHA256校验下载完整性；独立发布签名验证版本、地址和hash的真实性。
  */
 
 function parseVersion(value) {
@@ -40,8 +36,36 @@ function safeHttps(value) {
   }
 }
 
-async function checkForUpdate({ feedUrl, currentVersion, fetchImpl = globalThis.fetch, timeoutMs = 8000 }) {
-  if (!feedUrl) return null;
+function releaseKey(value) {
+  if(typeof value!=='string'||!value.includes('-----BEGIN PUBLIC KEY-----'))return null;
+  try{const key=createPublicKey(value);return key.asymmetricKeyType==='ed25519'?key:null;}catch{return null;}
+}
+
+function manifestPayload(data) {
+  if(data?.schema!==1||typeof data.version!=='string'||data.version.length>80||!parseVersion(data.version)||data.version!==data.version.trim())return null;
+  const url=safeHttps(data.url);
+  if(!url||url!==data.url||!new URL(url).pathname.toLowerCase().endsWith('.exe')||typeof data.sha256!=='string'||!/^[a-f0-9]{64}$/.test(data.sha256))return null;
+  return Buffer.from(JSON.stringify({schema:1,version:data.version,url,sha256:data.sha256}),'utf8');
+}
+
+function verifyUpdateManifest(data,publicKey) {
+  const key=releaseKey(publicKey),payload=manifestPayload(data);
+  if(!key||!payload||typeof data.signature!=='string'||!/^[A-Za-z0-9+/]{86}==$/.test(data.signature))return null;
+  try{
+    const signature=Buffer.from(data.signature,'base64');
+    if(signature.length!==64||signature.toString('base64')!==data.signature||!verify(null,payload,key,signature))return null;
+    return {schema:1,version:data.version,url:data.url,sha256:data.sha256,signature:data.signature};
+  }catch{return null;}
+}
+
+function updatePolicy({packaged,configuration={},environment={}}) {
+  const publicKey=configuration.updatePublicKey;
+  const candidate=packaged?configuration.updateFeed:(environment.OKPLAY_UPDATE_URL||configuration.updateFeed);
+  return {feedUrl:releaseKey(publicKey)?safeHttps(candidate):null,publicKey};
+}
+
+async function checkForUpdate({ feedUrl, currentVersion, publicKey, fetchImpl = globalThis.fetch, timeoutMs = 8000 }) {
+  if (!feedUrl||!releaseKey(publicKey)) return null;
   const safeFeed = safeHttps(feedUrl);
   if (!safeFeed) return null;
   const response = await fetchImpl(safeFeed, {
@@ -55,14 +79,13 @@ async function checkForUpdate({ feedUrl, currentVersion, fetchImpl = globalThis.
   if(response.body?.getReader){const reader=response.body.getReader();let size=0;const chunks=[];try{while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>65536){await reader.cancel();return null;}chunks.push(Buffer.from(value));}text=Buffer.concat(chunks).toString('utf8');}finally{reader.releaseLock();}}
   else{text=await response.text();if(Buffer.byteLength(text)>65536)return null;}
   let data;try{data=JSON.parse(text);}catch{return null;}
-  if(typeof data?.version!=='string'||data.version.length>80)return null;
-  if (!isNewer(data?.version, currentVersion)) return null;
-  const url = safeHttps(data?.url);
-  if(!url||!new URL(url).pathname.toLowerCase().endsWith('.exe')||typeof data.sha256!=='string'||!/^[a-f0-9]{64}$/i.test(data.sha256))return null;
-  return {version:data.version.trim(),url,sha256:data.sha256.toLowerCase()};
+  const update=verifyUpdateManifest(data,publicKey);
+  return update&&isNewer(update.version,currentVersion)?update:null;
 }
 
-async function downloadUpdate(update,{directory,fetchImpl=globalThis.fetch,onProgress=()=>{},signal}){
+async function downloadUpdate(update,{directory,publicKey,fetchImpl=globalThis.fetch,onProgress=()=>{},signal}){
+  update=verifyUpdateManifest(update,publicKey);
+  if(!update)throw Error('更新发布签名无效');
   signal=signal?AbortSignal.any([signal,AbortSignal.timeout(600000)]):AbortSignal.timeout(600000);
   const folder=await fs.mkdtemp(path.join(directory,'okplay-update-'));
   const partial=path.join(folder,'update.part');
@@ -102,7 +125,16 @@ async function downloadUpdate(update,{directory,fetchImpl=globalThis.fetch,onPro
   }
 }
 
-function launchInstaller(installer,{spawnImpl=require('node:child_process').spawn}={}){
+async function verifyInstaller(installer,update,publicKey){
+  const verified=verifyUpdateManifest(update,publicKey);
+  if(!verified)throw Error('更新发布签名无效');
+  const hash=createHash('sha256');
+  for await(const chunk of createReadStream(installer))hash.update(chunk);
+  if(hash.digest('hex')!==verified.sha256)throw Error('更新包执行前校验失败');
+}
+
+async function launchInstaller(installer,{update,publicKey,spawnImpl=require('node:child_process').spawn}={}){
+  await verifyInstaller(installer,update,publicKey);
   return new Promise((resolve,reject)=>{
     const child=spawnImpl(installer,['/S','--updated','--force-run','--keep-shortcuts'],{
       detached:true,stdio:'ignore',windowsHide:true
@@ -112,4 +144,4 @@ function launchInstaller(installer,{spawnImpl=require('node:child_process').spaw
   });
 }
 
-module.exports={checkForUpdate,downloadUpdate,launchInstaller,isNewer,parseVersion,safeHttps};
+module.exports={checkForUpdate,downloadUpdate,launchInstaller,verifyInstaller,verifyUpdateManifest,manifestPayload,updatePolicy,isNewer,parseVersion,safeHttps};

@@ -1,16 +1,17 @@
 const {app,BrowserWindow,ipcMain,screen,session,safeStorage,shell,dialog,Menu}=require('electron');
 const {ENTRY,ORIGIN,PREFIX,installService}=require('./desktop-service.cjs');
 const {createLogger,installWindowLifecycle}=require('./lifecycle.cjs');
-const {checkForUpdate,downloadUpdate,launchInstaller}=require('./update-check.cjs');
+const {checkForUpdate,downloadUpdate,launchInstaller,verifyInstaller,updatePolicy}=require('./update-check.cjs');
 const appConfig=require('./package.json');
 const path=require('node:path'),fs=require('node:fs/promises'),fsSync=require('node:fs');
 const referenceAudit=process.argv.includes('--audit-reference');
-const qa=process.argv.includes('--qa')||referenceAudit;
+const updateSecurityQA=process.argv.includes('--qa-update-security');
+const qa=process.argv.includes('--qa')||referenceAudit||updateSecurityQA;
 const showQA=process.argv.includes('--qa-visible');
 const productionCheck=process.argv.includes('--check-production');
 const allowDevTools=process.argv.includes('--dev-tools')&&!app.isPackaged;
 const isolated=qa||productionCheck;
-const prohibitedFlags=app.isPackaged&&process.argv.some(arg=>['--qa','--qa-visible','--audit-reference','--check-production'].includes(arg));
+const prohibitedFlags=app.isPackaged&&process.argv.some(arg=>['--qa','--qa-visible','--audit-reference','--check-production','--qa-update-security'].includes(arg));
 app.commandLine.appendSwitch('no-proxy-server');
 if(qa)app.commandLine.appendSwitch('force-device-scale-factor','1');
 if(isolated&&!app.isPackaged)app.setPath('userData',path.join(app.getPath('temp'),'okplay-production-check-'+process.pid));
@@ -75,13 +76,15 @@ async function bootstrap(){
  const installedWindowsApp=process.platform==='win32'&&app.isPackaged&&
   fsSync.existsSync(path.join(path.dirname(process.execPath),'Uninstall OKPlay.exe'));
  let updateRequest, availableUpdate;
+ const releasePolicy=updatePolicy({packaged:app.isPackaged,configuration:appConfig.okplay,environment:process.env});
+ const updatePublicKey=qa?fixture.updatePublicKey:releasePolicy.publicKey;
  async function findUpdate(){
   if(!qa&&!installedWindowsApp)return null;
   try{
-   const options={currentVersion:app.getVersion(),feedUrl:process.env.OKPLAY_UPDATE_URL||appConfig.okplay?.updateFeed};
+   const options={currentVersion:app.getVersion(),feedUrl:releasePolicy.feedUrl,publicKey:updatePublicKey};
    if(qa){
     options.feedUrl='https://example.com/update-feed';
-    options.fetchImpl=async()=>new Response(JSON.stringify(fixture.state.updateFeed));
+    options.fetchImpl=async()=>new Response(JSON.stringify(fixture.signUpdateFeed(fixture.state.updateFeed)));
    }
    availableUpdate=await checkForUpdate(options);
    if(availableUpdate)void log('update_available',{version:availableUpdate.version});
@@ -110,7 +113,7 @@ async function bootstrap(){
   try{
    if(!downloadedInstaller){
     downloadedInstaller=await downloadUpdate(availableUpdate,{
-     directory:app.getPath('temp'),signal:downloadController.signal,
+     directory:app.getPath('temp'),signal:downloadController.signal,publicKey:updatePublicKey,
      ...(qa?{fetchImpl:async()=>new Response(fixture.state.updateBytes, {headers:{'content-length':String(fixture.state.updateBytes.length)}})}:{}),
      onProgress:percent=>{if(!updateWindow.isDestroyed())updateWindow.webContents.send('update-progress',percent);}
     });
@@ -127,11 +130,12 @@ async function bootstrap(){
   installerStarting=true;
   try{
    if(qa){
+    await verifyInstaller(downloadedInstaller,availableUpdate,updatePublicKey);
     fixture.state.updateDownloaded=await fs.readFile(downloadedInstaller);
     if(fixture.state.updateLaunchFails)throw Error('fixture installer launch failed');
     fixture.state.updateInstallReleaseCount=fixture.state.released;
    }else{
-    await launchInstaller(downloadedInstaller);
+    await launchInstaller(downloadedInstaller,{update:availableUpdate,publicKey:updatePublicKey});
     installerLaunched=true;
    }
    if(!updateWindow.isDestroyed())updateWindow.close();
@@ -146,7 +150,7 @@ async function bootstrap(){
  ipcMain.on('reload-app',event=>{if(trusted(event))void lifecycle.retry().catch(()=>showRecovery());});
  ipcMain.on('renderer-issue',event=>{if(trusted(event))void log('renderer_issue');});
  ipcMain.handle('open-external',async(event,value)=>{if(!trusted(event)||typeof value!=='string'||value.length>8192)return false;try{const url=new URL(value);if(url.protocol!=='https:'||url.username||url.password)return false;if(qa){fixture.state.openedUrls.push(url.href);return true;}await shell.openExternal(url.href);return true;}catch{return false;}});
- try{if(qa){await require(referenceAudit?'./test/reference-capture.cjs':'./qa.cjs')(win,ENTRY,fixture);app.exit(0);}else if(productionCheck){await require('./production-check.cjs')(win,ENTRY,sourceDiagnostics);app.exit(0);}else await reload();}
+ try{if(qa){await require(updateSecurityQA?'./test/update-security-qa.cjs':referenceAudit?'./test/reference-capture.cjs':'./qa.cjs')(win,ENTRY,fixture);app.exit(0);}else if(productionCheck){await require('./production-check.cjs')(win,ENTRY,sourceDiagnostics);app.exit(0);}else await reload();}
  catch(error){if(qa)await fs.writeFile(path.join(__dirname,'design','QA-error.txt'),String(error.stack||error));if(productionCheck)await fs.writeFile(path.join(__dirname,'design','production-check-error.txt'),'生产检查失败');await log('startup_failed',{code:error.code});if(isolated){console.error(error);app.exit(1);}else await showRecovery().catch(()=>app.quit());}
 }
 if(!primary){if(prohibitedFlags)app.exit(64);else app.quit();}

@@ -141,33 +141,90 @@ async function openResource(id){
  showModal(item.title,`<div class="resource-detail-layout"><div>${picture(item.imageUrl,'resource-detail-image')}</div><div><p class="resource-description">${esc(item.description||'暂无说明')}</p><textarea class="download-address" readonly aria-label="资源获取地址">${esc(item.downloadUrl||'')}</textarea><p class="external-error" role="alert"></p></div></div>`,btn('获取','external','btn primary'),'resource-detail-modal');
  }catch(error){if(seq===searchSeq&&modal.open&&modalToken===paySeq)showModal('资源详情',errorView(error.message,'resource:'+id));}
 }
-function buyCourse(id){const item=data.available.categories.flatMap(c=>c.courses).find(c=>c.id===id);if(!item)return;pickedCourse=item;externalUrl=safeUrl(item.purchaseUrl||'');showModal(item.title,`<div class="resource-detail-layout"><div>${picture(item.coverUrl,'resource-detail-image')}</div><div><p class="purchase-price">${item.amount==null?'':'¥ '+Number(item.amount).toFixed(2)}</p><p class="subtle">${item.chapterCount} 章 · ${item.lessonCount} 课时${item.difficulty?' · 难易度 '+Number(item.difficulty)+' 星':''}</p><p class="resource-description">${esc(item.intro||'暂无课程简介')}</p><p class="purchase-notice">未获得该课程授权<br>请扫码购买或联系客服</p><p class="external-error" role="alert"></p></div></div>`,(Number(item.amount)>0?btn('立即扫码购课','pay-wechat','btn primary'):'')+btn('在线客服购买','support','btn outline'),'resource-detail-modal');}
-async function startPayment(){
- const item=pickedCourse;if(paymentCreating||!item||!(Number(item.amount)>0))return;paymentCreating=true;
- const owner=account?.id,key=owner+':'+item.id;showModal('微信扫码支付','<p>正在生成二维码…</p>');const seq=paySeq;
- try{const channels=await api('/pay/channels');if(seq!==paySeq||!modal.open)return;if(!channels.wechat){showModal('微信扫码支付','<p>暂未开通微信支付，请联系客服购买。</p>',btn('在线咨询','support','btn outline'));return;}
- const QRCodeLibrary=await window.okplayFeatures.load('qrcode');if(seq!==paySeq||!modal.open)return;
- let order=pendingPaymentOrders.get(key);
- if(order&&order.status==='pending'&&Date.parse(order.expiresAt)>Date.now())order=(await api('/pay/orders/'+encode(order.orderNo))).order;
- else order=(await api('/pay/orders',{method:'POST',body:{courseId:item.id,channel:'wechat'}})).order;
- if(order.status==='pending')pendingPaymentOrders.set(key,order);else pendingPaymentOrders.delete(key);
- if(seq!==paySeq||!modal.open||account?.id!==owner)return;
- if(order.status==='pending'&&(!order.codeUrl||order.codeUrl.length>4096))throw new Error('二维码数据异常，请联系客服确认订单');
- const image=order.status==='pending'?await QRCodeLibrary.toDataURL(order.codeUrl,{width:240,margin:2}):'';
- if(seq!==paySeq||!modal.open)return;showPayment(order,image);
- if(order.status!=='pending'){if(order.status==='paid')data=await bootstrap();return;}
- const pollSeq=paySeq;let failures=0;
- const poll=async()=>{if(pollSeq!==paySeq||!modal.open||account?.id!==owner)return;payPollAbort=new AbortController();let delay=3000;
- try{const {order:latest}=await api('/pay/orders/'+encode(order.orderNo),{signal:payPollAbort.signal});if(pollSeq!==paySeq||!modal.open)return;failures=0;
- if(latest.status!=='pending'){pendingPaymentOrders.delete(key);showPayment(latest,'');if(latest.status==='paid')data=await bootstrap();return;}
- const status=document.querySelector('#payment-status');if(status)status.textContent='';
- }catch(error){if(pollSeq!==paySeq||!modal.open)return;delay=Math.min(15000,3000*2**Math.min(++failures,3));const status=document.querySelector('#payment-status');if(status)status.textContent='订单状态暂时无法查询，正在重试，请勿重复支付。';}
- finally{payPollAbort=null;if(pollSeq===paySeq&&modal.open)payTimer=setTimeout(poll,delay);}
- };payTimer=setTimeout(poll,3000);
- }catch(error){if(seq===paySeq&&modal.open)showModal('微信扫码支付',errorView(error.message,'pay-wechat'));}
+function buyCourse(id){const item=data.available.categories.flatMap(c=>c.courses).find(c=>c.id===id);if(!item)return;pickedCourse=item;externalUrl=safeUrl(item.purchaseUrl||'');showModal(item.title,`<div class="resource-detail-layout"><div>${picture(item.coverUrl,'resource-detail-image')}</div><div><p class="purchase-price">${item.amount==null?'':'¥ '+Number(item.amount).toFixed(2)}</p><p class="subtle">${item.chapterCount} 章 · ${item.lessonCount} 课时${item.difficulty?' · 难易度 '+Number(item.difficulty)+' 星':''}</p><p class="resource-description">${esc(item.intro||'暂无课程简介')}</p><p class="purchase-notice">未获得该课程授权<br>请扫码购买或联系客服</p><p class="external-error" role="alert"></p></div></div>`,(Number(item.amount)>0?btn('微信扫码购课','pay-wechat','btn primary')+btn('支付宝购课','pay-alipay','btn outline'):'')+btn('在线客服购买','support','btn outline'),'resource-detail-modal');}
+async function startPayment(channel='wechat'){
+ const item=pickedCourse;if(paymentCreating||!item||!(Number(item.amount)>0))return;
+ paymentCreating=true;
+ const owner=account?.id,key=owner+':'+item.id;
+ const title=channel==='alipay'?'支付宝扫码支付':'微信扫码支付';
+ showModal(title,'<p>正在生成支付订单…</p>');
+ const seq=paySeq;
+ try{
+  const channels=await api('/pay/channels');
+  if(seq!==paySeq||!modal.open)return;
+  if(!channels[channel]){showModal(title,`<p>暂未开通${channel==='alipay'?'支付宝':'微信'}支付，请联系客服购买。</p>`,btn('在线咨询','support','btn outline'));return;}
+
+  if(channel==='alipay'){
+   const QRCodeLibrary=await window.okplayFeatures.load('qrcode');if(seq!==paySeq||!modal.open)return;
+   const result=await api('/pay/orders',{method:'POST',body:{courseId:item.id,channel:'alipay'}});
+   if(seq!==paySeq||!modal.open||account?.id!==owner)return;
+   const order=result.order;
+   if(order.status==='pending')pendingPaymentOrders.set(key,order);else pendingPaymentOrders.delete(key);
+   if(order.status==='pending'&&(!order.qrCode||order.qrCode.length>4096))throw new Error('二维码数据异常，请联系客服确认订单');
+   const image=order.status==='pending'?await QRCodeLibrary.toDataURL(order.qrCode,{width:240,margin:2}):'';
+   if(seq!==paySeq||!modal.open)return;
+   showAlipayPayment(order,image);
+   if(order.status!=='pending'){if(order.status==='paid')data=await bootstrap();return;}
+   startPaymentPolling(order,key,owner,paySeq,'alipay');
+   return;
+  }
+
+  const QRCodeLibrary=await window.okplayFeatures.load('qrcode');if(seq!==paySeq||!modal.open)return;
+  let order=pendingPaymentOrders.get(key);
+  if(order&&order.status==='pending'&&Date.parse(order.expiresAt)>Date.now()&&order.channel==='wechat')order=(await api('/pay/orders/'+encode(order.orderNo))).order;
+  else order=(await api('/pay/orders',{method:'POST',body:{courseId:item.id,channel:'wechat'}})).order;
+  if(order.status==='pending')pendingPaymentOrders.set(key,order);else pendingPaymentOrders.delete(key);
+  if(seq!==paySeq||!modal.open||account?.id!==owner)return;
+  if(order.status==='pending'&&(!order.codeUrl||order.codeUrl.length>4096))throw new Error('二维码数据异常，请联系客服确认订单');
+  const image=order.status==='pending'?await QRCodeLibrary.toDataURL(order.codeUrl,{width:240,margin:2}):'';
+  if(seq!==paySeq||!modal.open)return;
+  showPayment(order,image);
+  if(order.status!=='pending'){if(order.status==='paid')data=await bootstrap();return;}
+  startPaymentPolling(order,key,owner,paySeq,'wechat');
+ }catch(error){if(seq===paySeq&&modal.open)showModal(title,errorView(error.message,channel==='alipay'?'pay-alipay':'pay-wechat'));}
  finally{paymentCreating=false;}
 }
+
+function startPaymentPolling(order,key,owner,pollSeq,channel){
+ let failures=0;
+ const poll=async()=>{
+  if(pollSeq!==paySeq||!modal.open||account?.id!==owner)return;
+  payPollAbort=new AbortController();
+  let delay=3000;
+  try{
+   const {order:latest}=await api('/pay/orders/'+encode(order.orderNo),{signal:payPollAbort.signal});
+   if(pollSeq!==paySeq||!modal.open)return;
+   failures=0;
+   if(latest.status!=='pending'){
+    pendingPaymentOrders.delete(key);
+    if(channel==='alipay')showAlipayPayment(latest);else showPayment(latest,'');
+    if(latest.status==='paid')data=await bootstrap();
+    return;
+   }
+   const status=document.querySelector('#payment-status');if(status)status.textContent='';
+  }catch(error){
+   if(pollSeq!==paySeq||!modal.open)return;
+   delay=Math.min(15000,3000*2**Math.min(++failures,3));
+   const status=document.querySelector('#payment-status');
+   if(status)status.textContent='订单状态暂时无法查询，正在重试，请勿重复支付。';
+  }finally{
+   payPollAbort=null;
+   if(pollSeq===paySeq&&modal.open)payTimer=setTimeout(poll,delay);
+  }
+ };
+ payTimer=setTimeout(poll,3000);
+}
+
 function showPayment(order,image){showModal('微信扫码支付',`<div class="payment-view"><p>${esc(order.courseTitle)}</p><p class="purchase-price">¥${Number(order.amountCents/100).toLocaleString('zh-CN',{maximumFractionDigits:2})}</p>${order.status==='paid'?'<p>支付成功，课程已加入学习中心。</p>':order.status==='closed'?'<p>订单已关闭，请重新发起支付。</p>':`<img src="${esc(image)}" alt="微信支付二维码" width="240" height="240"><p>请用微信“扫一扫”完成支付</p><p class="payment-order">订单号：${esc(order.orderNo)}</p>`}<p id="payment-status" role="status"></p></div>`,order.status==='paid'?btn('立即去查看','go:home','btn primary'):'');}
+
+function showAlipayPayment(order,image){
+ if(order.status==='pending'&&image){
+  showModal('支付宝扫码支付',`<div class="payment-view"><p>${esc(order.courseTitle)}</p><p class="purchase-price">¥${Number(order.amountCents/100).toLocaleString('zh-CN',{maximumFractionDigits:2})}</p><img src="${esc(image)}" alt="支付宝支付二维码" width="240" height="240"><p>请用支付宝“扫一扫”完成支付</p><p class="payment-order">订单号：${esc(order.orderNo)}</p><p id="payment-status" role="status"></p></div>`);
+  return;
+ }
+ showModal('支付宝扫码支付',`<div class="payment-view"><p>${esc(order.courseTitle)}</p><p class="purchase-price">¥${Number(order.amountCents/100).toLocaleString('zh-CN',{maximumFractionDigits:2})}</p>${order.status==='paid'?'<p>支付成功，课程已加入学习中心。</p>':order.status==='closed'?'<p>订单已关闭，请重新发起支付。</p>':'<p>正在确认支付状态…</p>'}<p id="payment-status" role="status"></p></div>`,order.status==='paid'?btn('立即去查看','go:home','btn primary'):'');
+}
+
 async function openAccount(){
  const snapshot=account;
  if(!snapshot)return;
@@ -274,7 +331,7 @@ document.addEventListener('click',event=>{
  else if(action==='retry'){if(groups.length)await loadResourceItems();else await navigate(page);}
  else if(action==='catalog-group')document.querySelector('#catalog-section-'+Number(param))?.scrollIntoView({behavior:'smooth',block:'start'});
 
- else if(action==='pay-wechat')await startPayment();
+ else if(action==='pay-wechat')await startPayment('wechat');else if(action==='pay-alipay')await startPayment('alipay');
  else if(action==='buy')buyCourse(param);
  else if(action==='external'){if(!externalUrl||!await window.desktop.openExternal(externalUrl)){const error=modal.querySelector('.external-error');if(error)error.textContent='无法打开此地址，请手动选中复制。';else showModal('无法打开链接','<p>仅支持安全的 HTTPS 外部链接</p>');}}
  else if(action==='account')void openAccount();

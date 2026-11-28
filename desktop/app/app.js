@@ -5,11 +5,13 @@ const pages=[['home','学习中心',0],['catalog','全部课程',1],['tools','�
 const kinds={tools:'tool',source:'source',ui:'effect',ai:'asset',models:'platform'};
 const eyebrows={tools:'TOOLS',source:'SOURCE',ai:'PLATFORMS',models:'MODELS / GIT'};
 const stage=document.querySelector('#stage'),modal=document.querySelector('#modal');
+// 关掉二维码弹框就视为放弃支付：通知服务端关单（失败不影响界面）。
+modal.addEventListener('close',()=>{const pending=activePayOrder;activePayOrder=null;if(!pending||!account)return;pendingPaymentOrders.delete(pending.key);api('/pay/orders/'+encode(pending.orderNo)+'/close',{method:'POST',timeoutMs:5000}).catch(()=>{});});
 const pageBackdrop=document.createElement('div');pageBackdrop.className='page-background';pageBackdrop.setAttribute('aria-hidden','true');pageBackdrop.innerHTML='<video src="assets/login-bg.mp4" autoplay muted loop playsinline preload="auto"></video>';
 let page='loading',account=null,data=null,course=null,currentLesson=null,currentVideo=null,viewSeq=0;
 const baseResourceLimit=()=>innerWidth<800?9:18;
 let groups=[],primary=0,secondary=0,resourcePage=0,resourceLimit=baseResourceLimit(),resourceItems=[],resourceTotal=0,resourceLoading=false,resourceError='';
-let pickedCourse=null,payTimer=null,paySeq=0,paymentCreating=false,payPollAbort=null;
+let pickedCourse=null,payTimer=null,paySeq=0,paymentCreating=false,payPollAbort=null,activePayOrder=null;
 const pendingPaymentOrders=new Map();
 let catalogGroup=0,catalogQuery='',searchTimer,searchSeq=0,loginBusy=false,authSubmitting=false,captcha=null,captchaTimer,captchaCountdownTimer,captchaCredentials=null,externalUrl='';
 let controls=null,media=null,hls=null,grant=null,heartbeat=null,progressSequence=0,playerEpoch=0,playerError='',notes='',rate=1,muted=false;
@@ -215,9 +217,10 @@ function startPaymentPolling(order,key,owner,pollSeq,channel){
  payTimer=setTimeout(poll,3000);
 }
 
-function showPayment(order,image){showModal('微信扫码支付',`<div class="payment-view"><p>${esc(order.courseTitle)}</p><p class="purchase-price">¥${Number(order.amountCents/100).toLocaleString('zh-CN',{maximumFractionDigits:2})}</p>${order.status==='paid'?'<p>支付成功，课程已加入学习中心。</p>':order.status==='closed'?'<p>订单已关闭，请重新发起支付。</p>':`<img src="${esc(image)}" alt="微信支付二维码" width="240" height="240"><p>请用微信“扫一扫”完成支付</p><p class="payment-order">订单号：${esc(order.orderNo)}</p>`}<p id="payment-status" role="status"></p></div>`,order.status==='paid'?btn('立即去查看','go:home','btn primary'):'');}
+function showPayment(order,image){activePayOrder=order.status==='pending'&&image?{orderNo:order.orderNo,key:account?.id+':'+order.courseId}:null;showModal('微信扫码支付',`<div class="payment-view"><p>${esc(order.courseTitle)}</p><p class="purchase-price">¥${Number(order.amountCents/100).toLocaleString('zh-CN',{maximumFractionDigits:2})}</p>${order.status==='paid'?'<p>支付成功，课程已加入学习中心。</p>':order.status==='closed'?'<p>订单已关闭，请重新发起支付。</p>':`<img src="${esc(image)}" alt="微信支付二维码" width="240" height="240"><p>请用微信“扫一扫”完成支付</p><p class="payment-order">订单号：${esc(order.orderNo)}</p>`}<p id="payment-status" role="status"></p></div>`,order.status==='paid'?btn('立即去查看','go:home','btn primary'):'');}
 
 function showAlipayPayment(order,image){
+ activePayOrder=order.status==='pending'&&image?{orderNo:order.orderNo,key:account?.id+':'+order.courseId}:null;
  if(order.status==='pending'&&image){
   showModal('支付宝扫码支付',`<div class="payment-view"><p>${esc(order.courseTitle)}</p><p class="purchase-price">¥${Number(order.amountCents/100).toLocaleString('zh-CN',{maximumFractionDigits:2})}</p><img src="${esc(image)}" alt="支付宝支付二维码" width="240" height="240"><p>请用支付宝“扫一扫”完成支付</p><p class="payment-order">订单号：${esc(order.orderNo)}</p><p id="payment-status" role="status"></p></div>`);
   return;
@@ -348,7 +351,26 @@ window.desktop.checkUpdate().then(version=>{
  if(!version)return;
  updateButton.title='下载新版 '+version;
  updateButton.hidden=false;
+ void silentAutoUpdate();
 }).catch(()=>{});
+// 全静默自动升级：后台下载 → 等播放停止满 2 分钟 → 安装并重启。
+// 手动「更新」按钮保留作兜底；QA 环境由主进程关闭此逻辑。
+async function silentAutoUpdate(){
+ try{
+  if(!await window.desktop.autoUpdate?.())return;
+  if(await window.desktop.downloadUpdate()!=='ready')return;
+  let idleSince=0;
+  while(true){
+   const idle=(!media||media.paused)&&!(modal.open&&document.querySelector('.payment-view'));
+   if(idle){if(!idleSince)idleSince=Date.now();if(Date.now()-idleSince>=120000)break;}
+   else idleSince=0;
+   await new Promise(done=>setTimeout(done,15000));
+  }
+  stopPaymentPolling();
+  await stopPlayback();
+  await window.desktop.installUpdate();
+ }catch{}
+}
 window.desktop.onUpdateProgress(percent=>{
  if(updateButton.disabled)updateButton.textContent=percent===100?'下载完成':'下载 '+percent+'%';
 });

@@ -146,6 +146,7 @@ async function bootstrap(){
   }finally{installerStarting=false;}
  });
  ipcMain.handle('app-version',event=>trusted(event)?app.getVersion():null);
+ ipcMain.handle('auto-update-enabled',event=>trusted(event)&&!qa);
  ipcMain.on('close-ready',event=>{if(trusted(event))lifecycle.readyToClose();});
  ipcMain.on('reload-app',event=>{if(trusted(event))void lifecycle.retry().catch(()=>showRecovery());});
  ipcMain.on('renderer-issue',event=>{if(trusted(event))void log('renderer_issue');});

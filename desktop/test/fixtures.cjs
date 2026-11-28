@@ -7,7 +7,7 @@ const mine={id:'course-1',title:'接口课程甲',coverUrl:image,chapterCount:1,
 const catalog={showAvailable:true,categories:[{id:'category-1',name:'服务端课程分类',courses:Array.from({length:8},(_,i)=>({id:'buy-'+(i+1),title:i?'接口可购课程'+(i+1):'接口可购课程',coverUrl:image,chapterCount:2,lessonCount:4,amount:99,intro:'服务端课程简介',purchaseUrl:'https://example.com/course'}))},{id:'category-2',name:'第二课程分类',courses:[{id:'other-1',title:'第二分类课程',coverUrl:image,chapterCount:1,lessonCount:3,amount:null,intro:'第二组简介'}]}]};
 function createFixture(){
  const crypto=require('node:crypto'),pair=crypto.generateKeyPairSync('ed25519');
- const state={loggedIn:false,noVideos:false,noNotes:false,captcha:'off',fail:false,slow:false,calls:[],reports:[],released:0,openedUrls:[],orderStatus:'pending',payEnabled:true,paymentCreates:0};
+ const state={loggedIn:false,noVideos:false,noNotes:false,captcha:'off',fail:false,slow:false,calls:[],reports:[],released:0,openedUrls:[],orderStatus:'pending',payEnabled:true,paymentCreates:0,orderCloses:0};
  const kinds=['tool','source','effect','asset','platform'];
  const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json'}});
  const handler=async(request,session)=>{
@@ -41,6 +41,7 @@ function createFixture(){
   const groups=kind=>[{id:kind+'-group-1',name:kind+'一级甲',subs:[{id:kind+'-sub-1',name:'二级甲',itemCount:20},{id:kind+'-sub-2',name:'二级乙',itemCount:1}]},{id:kind+'-group-2',name:kind+'一级乙',subs:[{id:kind+'-sub-3',name:'二级丙',itemCount:0}]}];
   if(p==='/api/bootstrap')return json({courses:Array.from({length:6},(_,i)=>({...mine,id:i?'course-'+(i+1):mine.id,title:i?'接口课程'+(i+1):mine.title,completedLessons:i===1?2:0,progressPercent:i===1?100:0,...(i===0?{difficulty:2}:{})})),videos:state.noVideos?[]:Array.from({length:7},(_,i)=>({id:'video-'+(i+1),title:i?'接口独立视频'+(i+1):'接口独立视频',coverUrl:image})),available:catalog,resources:Object.fromEntries(kinds.map(k=>[k,groups(k)]))});
   if(p==='/api/activation-codes/redeem'){const {code}=await request.json();return code==='TEST-CODE'?json({courseId:'course-1',courseTitle:'接口课程甲',granted:true}):json({message:'激活码无效'},400);}
+  if(/^\/api\/pay\/orders\/[A-Za-z0-9_-]+\/close$/.test(p)){state.orderCloses++;return json({closed:true});}
   if(p==='/api/pay/channels')return json({wechat:state.payEnabled,alipay:state.payEnabled,currency:'CNY'});
   if(p==='/api/pay/orders'&&request.method==='POST'){state.paymentCreates++;const channel=(await request.json().catch(()=>({})))?.channel==='alipay'?'alipay':'wechat';return json({order:{orderNo:'test-order',status:'pending',courseId:'buy-1',courseTitle:'接口可购课程',amountCents:9900,channel,codeUrl:channel==='wechat'?'weixin://wxpay/bizpayurl?pr=synthetic':null,qrCode:channel==='alipay'?'https://qr.alipay.com/synthetic':null,expiresAt:new Date(Date.now()+600000).toISOString()}});}
   if(p==='/api/pay/orders/test-order'){state.pollActive=(state.pollActive||0)+1;state.pollMax=Math.max(state.pollMax||0,state.pollActive);try{if(state.pollDelay)await new Promise(r=>setTimeout(r,state.pollDelay));return json({order:{orderNo:'test-order',status:state.orderStatus,courseTitle:'接口可购课程',amountCents:9900,codeUrl:'weixin://wxpay/bizpayurl?pr=synthetic',expiresAt:new Date(Date.now()+600000).toISOString()}});}finally{state.pollActive--;}}
